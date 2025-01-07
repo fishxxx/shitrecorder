@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>便了么 - 您的健康记录助手</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+  <style>
+    body {
+      padding: 20px;
+    }
+    .record-card {
+      margin-bottom: 15px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      position: relative;
+    }
+    .collapsed .history-content,
+    .collapsed .calendar-content {
+      display: none;
+    }
+    .btn-sm {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.875rem;
+      margin: 2px;
+    }
+    .record-card button {
+      position: absolute;
+      right: 15px;
+      bottom: 15px;
+    }
+    .stats-card {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    #calendar {
+      margin: 20px 0;
+      max-width: 900px;
+    }
+  </style>
+</head>
+<body>
+  <div class="text-center mb-4">
+    <h1 class="display-4">💩 便了么</h1>
+    <p class="lead text-muted">您的健康记录助手</p>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="stats-card">
+        <h3>📊 统计概览</h3>
+        <div id="statsOverview"></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="timer-container" id="timer" style="display: none;">
+        <span class="fs-4">⏳ 已用时：</span>
+        <span class="fs-4 fw-bold" id="timeDisplay">00:00:00</span>
+      </div>
+
+      <div class="d-grid gap-2 d-md-block mb-4">
+        <button class="btn btn-primary me-md-2" id="startBtn">🚀 开始记录</button>
+        <button class="btn btn-secondary" id="endBtn" disabled>🏁 结束记录</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4" id="recordForm" style="display: none;">
+    <div class="card-body">
+      <h3 class="card-title mb-3">📝 记录详情</h3>
+      <div class="mb-3">
+        <label class="form-label">🎨 颜色：</label>
+        <select class="form-select" id="colorSelect">
+          <option value="brown">棕色</option>
+          <option value="yellow">黄色</option>
+          <option value="green">绿色</option>
+          <option value="black">黑色</option>
+        </select>
+      </div>
+      
+      <div class="mb-3">
+        <label class="form-label">🖐️ 性状：</label>
+        <select class="form-select" id="textureSelect">
+          <option value="normal">正常</option>
+          <option value="hard">硬</option>
+          <option value="soft">软</option>
+          <option value="watery">水样</option>
+        </select>
+      </div>
+      
+      <button class="btn btn-success w-100" id="saveBtn">💾 保存记录</button>
+    </div>
+  </div>
+
+  <div class="calendar-container">
+    <button class="btn btn-secondary mb-2" onclick="toggleCalendar()">折叠日历</button>
+    <div class="calendar-content">
+      <div id="calendar"></div>
+    </div>
+  </div>
+
+  <h2 class="mb-3">📚 历史记录</h2>
+  <div id="history"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+  <script>
+    // 初始化变量
+    let startTime = null;
+    let timerInterval = null;
+
+    // 确保DOM加载完成后再执行
+    document.addEventListener('DOMContentLoaded', function() {
+      const startBtn = document.getElementById('startBtn');
+      const endBtn = document.getElementById('endBtn');
+      const recordForm = document.getElementById('recordForm');
+      const timer = document.getElementById('timer');
+      const historyDiv = document.getElementById('history');
+
+      // 初始化日历
+      initCalendar();
+      // 初始化统计
+      updateStats();
+
+      // 检查元素是否存在
+      if (!startBtn || !endBtn || !recordForm || !timer || !historyDiv) {
+        console.error('页面元素加载失败，请检查HTML结构');
+        return;
+      }
+
+      // 开始记录
+      startBtn.addEventListener('click', () => {
+        startTime = new Date();
+        startBtn.disabled = true;
+        endBtn.disabled = false;
+        recordForm.style.display = 'block';
+        timer.style.display = 'block';
+        startTimer();
+      });
+
+      // 结束记录
+      endBtn.addEventListener('click', () => {
+        resetForm();
+      });
+
+      // 保存记录
+      const saveBtn = document.getElementById('saveBtn');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+          const duration = Math.floor((new Date() - startTime) / 1000 / 60); // 分钟
+          const color = document.getElementById('colorSelect').value;
+          const texture = document.getElementById('textureSelect').value;
+          
+          const record = {
+            time: startTime.toLocaleString(),
+            duration: duration,
+            color: color,
+            texture: texture
+          };
+
+          saveRecord(record);
+          resetForm();
+          showHistory();
+          updateStats();
+          initCalendar();
+        });
+      }
+
+      // 初始化时显示历史记录
+      showHistory();
+    });
+
+    // 初始化日历
+    function initCalendar() {
+      const records = JSON.parse(localStorage.getItem('poopRecords') || '[]');
+      const calendarEl = document.getElementById('calendar');
+      const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        events: records.map(record => ({
+          title: `💩 ${record.color} ${record.texture}`,
+          start: new Date(record.time),
+          allDay: true
+        }))
+      });
+      calendar.render();
+    }
+
+    // 更新统计信息
+    function updateStats() {
+      const records = JSON.parse(localStorage.getItem('poopRecords') || '[]');
+      const statsDiv = document.getElementById('statsOverview');
+      
+      // 计算统计数据
+      const totalRecords = records.length;
+      const avgDuration = totalRecords > 0 ? 
+        (records.reduce((sum, r) => sum + r.duration, 0) / totalRecords).toFixed(1) : 0;
+      
+      // 计算本周和本月数据
+      const now = new Date();
+      const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      const weeklyRecords = records.filter(r => new Date(r.time) >= startOfWeek);
+      const monthlyRecords = records.filter(r => new Date(r.time) >= startOfMonth);
+      
+      const weeklyCount = weeklyRecords.length;
+      const weeklyDuration = weeklyRecords.reduce((sum, r) => sum + r.duration, 0);
+      const monthlyCount = monthlyRecords.length;
+      const monthlyDuration = monthlyRecords.reduce((sum, r) => sum + r.duration, 0);
+
+      const colorCounts = {};
+      const textureCounts = {};
+      
+      records.forEach(record => {
+        colorCounts[record.color] = (colorCounts[record.color] || 0) + 1;
+        textureCounts[record.texture] = (textureCounts[record.texture] || 0) + 1;
+      });
+
+      statsDiv.innerHTML = `
+        <p>总记录数：${totalRecords}</p>
+        <p>平均时长：${avgDuration} 分钟</p>
+        <p>本周记录：${weeklyCount} 次，总时长 ${weeklyDuration} 分钟</p>
+        <p>本月记录：${monthlyCount} 次，总时长 ${monthlyDuration} 分钟</p>
+        <p>颜色分布：${Object.entries(colorCounts).map(([color, count]) => `${color}: ${count}`).join(', ')}</p>
+        <p>性状分布：${Object.entries(textureCounts).map(([texture, count]) => `${texture}: ${count}`).join(', ')}</p>
+      `;
+    }
+
+    // 保存记录到LocalStorage
+    function saveRecord(record) {
+      try {
+        let records = JSON.parse(localStorage.getItem('poopRecords') || '[]');
+        records.push(record);
+        localStorage.setItem('poopRecords', JSON.stringify(records));
+      } catch (error) {
+        console.error('保存记录失败:', error);
+      }
+    }
+
+    // 显示历史记录
+    function showHistory() {
+      try {
+        const historyDiv = document.getElementById('history');
+        if (!historyDiv) return;
+        
+        const records = JSON.parse(localStorage.getItem('poopRecords') || '[]');
+        historyDiv.innerHTML = `
+          <button class="btn btn-secondary mb-2" onclick="toggleHistory()">
+            ${historyDiv.classList.contains('collapsed') ? '展开' : '折叠'}历史记录
+          </button>
+          <div class="history-content">
+            ${records.map((record, index) => `
+              <div class="record-card">
+                <p>记录 ${index + 1}</p>
+                <p>时间：${record.time}</p>
+                <p>时长：${record.duration} 分钟</p>
+                <p>颜色：${record.color}</p>
+                <p>性状：${record.texture}</p>
+                <button class="btn btn-danger btn-sm" onclick="moveToRecycleBin(${index})">删除</button>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } catch (error) {
+        console.error('显示历史记录失败:', error);
+      }
+    }
+
+    // 添加折叠/展开功能
+    window.toggleHistory = function() {
+      const historyDiv = document.getElementById('history');
+      historyDiv.classList.toggle('collapsed');
+      const content = historyDiv.querySelector('.history-content');
+      content.style.display = historyDiv.classList.contains('collapsed') ? 'none' : 'block';
+      const btn = historyDiv.querySelector('button');
+      btn.textContent = historyDiv.classList.contains('collapsed') ? '展开历史记录' : '折叠历史记录';
+    };
+
+    // 日历折叠功能
+    window.toggleCalendar = function() {
+      const calendarContainer = document.querySelector('.calendar-container');
+      calendarContainer.classList.toggle('collapsed');
+      const content = calendarContainer.querySelector('.calendar-content');
+      content.style.display = calendarContainer.classList.contains('collapsed') ? 'none' : 'block';
+      const btn = calendarContainer.querySelector('button');
+      btn.textContent = calendarContainer.classList.contains('collapsed') ? '展开日历' : '折叠日历';
+    };
+
+    // 移动到回收站功能
+    window.moveToRecycleBin = function(index) {
+      try {
+        let records = JSON.parse(localStorage.getItem('poopRecords') || '[]');
+        let recycleBin = JSON.parse(localStorage.getItem('recycleBin') || '[]');
+        
+        // 将记录移动到回收站
+        recycleBin.push(records[index]);
+        records.splice(index, 1);
+        
+        localStorage.setItem('poopRecords', JSON.stringify(records));
+        localStorage.setItem('recycleBin', JSON.stringify(recycleBin));
+        
+        showHistory();
+        updateStats();
+        initCalendar();
+      } catch (error) {
+        console.error('删除记录失败:', error);
+      }
+    };
+
+    // 计时器功能
+    function startTimer() {
+      stopTimer();
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+    }
+
+    function updateTimer() {
+      try {
+        const now = new Date();
+        const elapsed = now - startTime;
+        const hours = Math.floor(elapsed / 3600000);
+        const minutes = Math.floor((elapsed % 3600000) / 60000);
+        const seconds = Math.floor((elapsed % 60000) / 1000);
+        const timeDisplay = document.getElementById('timeDisplay');
+        if (timeDisplay) {
+          timeDisplay.textContent = 
+            `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+      } catch (error) {
+        console.error('更新计时器失败:', error);
+      }
+    }
+
+    // 重置表单
+    function resetForm() {
+      startTime = null;
+      const startBtn = document.getElementById('startBtn');
+      const endBtn = document.getElementById('endBtn');
+      const recordForm = document.getElementById('recordForm');
+      const timer = document.getElementById('timer');
+      
+      if (startBtn) startBtn.disabled = false;
+      if (endBtn) endBtn.disabled = true;
+      if (recordForm) recordForm.style.display = 'none';
+      if (timer) timer.style.display = 'none';
+      stopTimer();
+    }
+  </script>
+</body>
+</html>
